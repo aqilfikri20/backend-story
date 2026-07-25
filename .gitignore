@@ -24,3 +24,6 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 model_data/
 relations.json
+
+__pycache__/
+*.pyc
