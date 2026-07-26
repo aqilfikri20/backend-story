@@ -165,9 +165,83 @@ def generate_paragraph(prompt):
 
     return result
 
+
 # =========================
 # Generate full story
 # =========================
+def generate_outline_ai(prompt):
+
+    response = client.chat.completions.create(
+        model="qwen--qwen3-4b-instruct-2507",
+        messages=[
+            {
+                "role":"user",
+                "content":prompt
+            }
+        ],
+        temperature=0.5,
+        top_p=0.9,
+        max_tokens=1000
+    )
+
+    return response.choices[0].message.content
+
+def generate_outline(tokoh, genre, peran, sifat, elemen):
+
+    prompt = f"""
+Anda adalah penulis novel profesional.
+
+Buat outline cerita menjadi tepat 10 bagian.
+
+Informasi cerita
+
+Nama Tokoh : {tokoh}
+Genre : {genre}
+Peran : {peran}
+Sifat : {sifat}
+Elemen Penting : {", ".join(elemen)}
+
+Struktur cerita:
+
+1. Orientasi 1
+{bagian_instruction["orientasi 1"]}
+
+2. Orientasi 2
+{bagian_instruction["orientasi 2"]}
+
+3. Konflik Awal 1
+{bagian_instruction["konflik awal 1"]}
+
+4. Konflik Awal 2
+{bagian_instruction["konflik awal 2"]}
+
+5. Eskalasi 1
+{bagian_instruction["eskalasi 1"]}
+
+6. Eskalasi 2
+{bagian_instruction["eskalasi 2"]}
+
+7. Klimaks 1
+{bagian_instruction["klimaks 1"]}
+
+8. Klimaks 2
+{bagian_instruction["klimaks 2"]}
+
+9. Resolusi
+{bagian_instruction["resolusi"]}
+
+10. Epilog
+{bagian_instruction["epilog"]}
+
+Aturan:
+
+- Buat tepat 10 poin.
+- Setiap poin maksimal 20 kata.
+- Setiap poin hanya menjelaskan tujuan kejadian.
+- Jangan menulis paragraf cerita.
+"""
+    return generate_outline_ai(prompt)
+
 def generate_story(data: StoryRequest):
 
     tokoh = data.nama.strip()
@@ -185,45 +259,75 @@ def generate_story(data: StoryRequest):
     if not elemen:
         elemen.append("Petualangan")
 
+    # ====================
+    # Membuat Outline
+    # ====================
+
+    outline = generate_outline(
+        tokoh,
+        genre,
+        peran,
+        sifat,
+        elemen
+    )
+
+    print(outline)
+
+    outline_list = []
+
+    for line in outline.split("\n"):
+
+        line = line.strip()
+
+        if line.startswith(tuple(f"{i}." for i in range(1,11))):
+            outline_list.append(line)
+
+    if len(outline_list) != 10:
+        print("Outline gagal dibuat")
+        outline_list = [""] * 10
+
     paragraphs = []
 
     for i in range(10):
+
         bagian = bagian_list[i]
+
+        outline_bagian = outline_list[i]
 
         if i == 0:
 
             prompt = f"""
 Anda adalah penulis novel profesional.
-
-Tugas Anda adalah menulis SATU paragraf cerita maksimal 80 kata.
-
-Informasi cerita:
+Tugas Anda adalah menulis SATU paragraf cerita berbahasa Indonesia.
+Informasi cerita
 
 Nama Tokoh : {tokoh}
 Genre : {genre}
 Peran : {peran}
 Sifat : {sifat}
 Elemen Penting : {", ".join(elemen)}
-Bagian cerita : {bagian}
-
-Tujuan paragraf :
+Bagian Cerita : {bagian}
+Tujuan paragraf:
 {bagian_instruction[bagian]}
+Outline bagian ini:
+{outline_bagian}
 
-Aturan:
-- Lanjutkan cerita berdasarkan CERITA SEBELUMNYA.
-- cerita yang anda buat diparagraf ini maksimal 80 kata.
-- Jangan mengulang kejadian yang sudah terjadi.
-- Jangan mengulang kalimat dari paragraf sebelumnya.
-- Gunakan seluruh informasi tokoh, genre, peran, sifat, dan elemen penting secara konsisten sepanjang cerita.
-- Jangan membuat tokoh utama baru.
-- Gunakan nama {tokoh} secara konsisten.
-- Tokoh utama tetap menjadi pusat cerita.
-- Konflik harus berkembang secara logis.
-- Gunakan seluruh elemen penting secara alami.
-- Setiap paragraf harus memperlihatkan perkembangan konflik yang nyata, bukan hanya memperkenalkan atau mengulang simbol.
-- Objek penting (buku, tas, kunci, dan sebagainya) harus memiliki fungsi yang jelas dalam alur cerita.
-- Klimaks harus berisi tindakan atau keputusan penting yang mengubah arah cerita.
-- Resolusi harus menjelaskan akibat dari keputusan tokoh utama
+Aturan penulisan:
+1. Tulis maksimal 80 kata.
+2. Gunakan bahasa Indonesia yang alami, mudah dipahami, dan mengalir seperti novel.
+3. Fokus pada satu kejadian utama dalam paragraf ini
+4. Paragraf harus memiliki hubungan sebab-akibat yang jelas.
+5. Setiap kejadian harus menjadi akibat dari kejadian sebelumnya.
+6. Jangan mengulang deskripsi, kalimat, simbol, atau tindakan yang sudah pernah digunakan.
+7. Jangan hanya menyebutkan elemen penting. Elemen tersebut harus memiliki fungsi nyata dalam cerita.
+8. Tokoh utama adalah {tokoh}. Jangan membuat tokoh utama baru.
+9. Gunakan sifat "{sifat}" melalui tindakan dan keputusan tokoh, bukan hanya menyebutkan sifatnya.
+10. Akhiri paragraf dengan situasi yang mendorong cerita ke paragraf berikutnya.
+11. Paragraf ini harus menghasilkan minimal satu perubahan baru pada cerita.
+12. Hindari mengulang konflik yang sama.
+13. Jika menggunakan elemen penting, elemen tersebut harus memengaruhi jalannya cerita.
+14. Hubungkan kejadian baru dengan kejadian sebelumnya menggunakan sebab-akibat yang jelas.
+Hanya tulis isi cerita tanpa penjelasan.
 """
 
         else:
@@ -249,24 +353,27 @@ Peran : {peran}
 Sifat : {sifat}
 Elemen Penting : {", ".join(elemen)}
 Bagian cerita : {bagian}
-
 Tujuan paragraf:
 {bagian_instruction[bagian]}
+Outline bagian ini:
+{outline_bagian}
 
-Aturan:
-- Lanjutkan cerita berdasarkan CERITA SEBELUMNYA.
-- cerita yang anda buat diparagraf ini maksimal 80 kata.
-- Jangan mengulang kejadian yang sudah terjadi.
-- Jangan mengulang kalimat dari paragraf sebelumnya.
-- Gunakan seluruh informasi tokoh, genre, peran, sifat, dan elemen penting secara konsisten sepanjang cerita.
-- Gunakan nama {tokoh} secara konsisten.
-- Tokoh utama tetap menjadi pusat cerita.
-- Konflik harus berkembang secara logis.
-- Gunakan seluruh elemen penting secara alami.
-- Setiap paragraf harus memperlihatkan perkembangan konflik yang nyata, bukan hanya memperkenalkan atau mengulang simbol.
-- Objek penting (buku, tas, kunci, dan sebagainya) harus memiliki fungsi yang jelas dalam alur cerita.
-- Klimaks harus berisi tindakan atau keputusan penting yang mengubah arah cerita.
-- Resolusi harus menjelaskan akibat dari keputusan tokoh utama
+Aturan penulisan:
+1. Tulis maksimal 80 kata.
+2. Gunakan bahasa Indonesia yang alami, mudah dipahami, dan mengalir seperti novel.
+3. Fokus pada satu kejadian utama dalam paragraf ini
+4. Paragraf harus memiliki hubungan sebab-akibat yang jelas.
+5. Setiap kejadian harus menjadi akibat dari kejadian sebelumnya.
+6. Jangan mengulang deskripsi, kalimat, simbol, atau tindakan yang sudah pernah digunakan.
+7. Jangan hanya menyebutkan elemen penting. Elemen tersebut harus memiliki fungsi nyata dalam cerita.
+8. Tokoh utama adalah {tokoh}. Jangan membuat tokoh utama baru.
+9. Gunakan sifat "{sifat}" melalui tindakan dan keputusan tokoh, bukan hanya menyebutkan sifatnya.
+10. Akhiri paragraf dengan situasi yang mendorong cerita ke paragraf berikutnya.
+11. Paragraf ini harus menghasilkan minimal satu perubahan baru pada cerita.
+12. Hindari mengulang konflik yang sama.
+13. Jika menggunakan elemen penting, elemen tersebut harus memengaruhi jalannya cerita.
+14. Hubungkan kejadian baru dengan kejadian sebelumnya menggunakan sebab-akibat yang jelas.
+Hanya tulis isi cerita tanpa penjelasan.
 """
 
         paragraph = generate_paragraph(prompt)
