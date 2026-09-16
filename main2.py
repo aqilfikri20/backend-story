@@ -131,7 +131,7 @@ bagian_instruction = {
         "Berikan penutup yang memberikan kesan utuh, bermakna, dan menjawab konflik utama tanpa membuka konflik baru."
     )
 }
-deployment_name = "qwen--qwen3-4b-instruct-2507-2"
+deployment_name = "qwen--qwen3-4b-instruct-2507"
 # =========================
 #  Bersihkan karakter
 # =========================
