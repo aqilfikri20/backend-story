@@ -1,16 +1,28 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import PlainTextResponse
+# main.py
+from urllib import response
+from fastapi import FastAPI
 from pydantic import BaseModel
-from openai import OpenAI
-from dotenv import load_dotenv
+from typing import List
+import torch
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import random
 import json
-import os
-import re
-import time
-import requests
+from typing import List
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+from openai import OpenAI
+from dotenv import load_dotenv
+import os
 
 load_dotenv()
 
@@ -25,13 +37,34 @@ client = OpenAI(
 # =========================
 # Schema
 # =========================
-class ChatRequest(BaseModel):
-    message: str
+class StoryRequest(BaseModel):
+    nama: str = ""
+    genre: str = ""
+    sifat: str = ""
+    peran: str = ""
+    elemen: List[str] = []
 
+class StoryPromptRequest(BaseModel):
+    prompt: str
 
 class ChatResponse(BaseModel):
     reply: str
 
+# =========================
+# Load relations
+# =========================
+with open("relations.json", "r", encoding="utf-8") as f:
+    relations = json.load(f)
+
+def weighted_pick(data):
+    if not data:
+        return None
+
+    return random.choices(
+        population=list(data.keys()),
+        weights=list(data.values()),
+        k=1
+    )[0]
 
 # =========================
 # Struktur cerita
@@ -151,26 +184,16 @@ def generate_paragraph(prompt):
 
 
 # =========================
-# Generate outline
+# Generate full story
 # =========================
 def generate_outline_ai(prompt):
+
     response = client.chat.completions.create(
         model=deployment_name,
         messages=[
             {
-                "role": "system",
-                "content": """
-Anda adalah penulis novel profesional yang bertugas membuat outline cerita.
-
-Ikuti informasi yang diberikan pengguna dan struktur cerita yang diberikan.
-Pertahankan informasi penting dari pengguna.
-Jika informasi belum lengkap, kembangkan secara kreatif dan masuk akal.
-Pastikan alur cerita memiliki hubungan sebab-akibat yang jelas dan konsisten.
-"""
-            },
-            {
-                "role": "user",
-                "content": prompt
+                "role":"user",
+                "content":prompt
             }
         ],
         temperature=0.5,
@@ -178,19 +201,21 @@ Pastikan alur cerita memiliki hubungan sebab-akibat yang jelas dan konsisten.
         max_tokens=1000
     )
 
-    result = response.choices[0].message.content
+    return response.choices[0].message.content
 
-    if result is None:
-        return ""
-
-    return result.strip()
-
-def generate_outline(user_idea):
+def generate_outline(tokoh, genre, peran, sifat, elemen):
 
     prompt = f"""
-Buat outline cerita berdasarkan ide atau instruksi pengguna berikut:
-IDE PENGGUNA:
-{user_idea}
+Anda adalah penulis novel profesional.
+Buat outline cerita menjadi tepat 10 bagian.
+
+Informasi cerita
+Nama Tokoh : {tokoh}
+Genre : {genre}
+Peran : {peran}
+Sifat : {sifat}
+Elemen Penting : {", ".join(elemen)}
+
 Struktur cerita:
 
 1. Orientasi 1
@@ -232,13 +257,34 @@ Aturan:
 """
     return generate_outline_ai(prompt)
 
-def generate_story(user_idea):
+def generate_story(data: StoryRequest):
+
+    tokoh = data.nama.strip()
+    genre = data.genre.strip()
+    peran = data.peran.strip()
+
+    sifat = data.sifat.strip()
+
+    elemen = [
+        e.strip()
+        for e in data.elemen
+        if e.strip()
+    ]
+
+    if not elemen:
+        elemen.append("Petualangan")
 
     # ====================
     # Membuat Outline
     # ====================
 
-    outline = generate_outline(user_idea)
+    outline = generate_outline(
+        tokoh,
+        genre,
+        peran,
+        sifat,
+        elemen
+    )
 
     print(outline)
 
@@ -260,162 +306,186 @@ def generate_story(user_idea):
     for i in range(10):
 
         bagian = bagian_list[i]
+
         outline_bagian = outline_list[i]
 
-        # Ambil maksimal 3 paragraf sebelumnya
-        if paragraphs:
-            konteks = "\n\n".join(paragraphs[-3:])
-        else:
-            konteks = "(Belum ada paragraf sebelumnya)"
+        if i == 0:
 
-        prompt = f"""
+            prompt = f"""
 Anda adalah penulis novel profesional.
+Tugas Anda adalah menulis SATU paragraf cerita berbahasa Indonesia.
+Informasi cerita
 
-Tugas Anda adalah menulis SATU paragraf cerita
-berbahasa Indonesia berdasarkan ide, outline,
-dan konteks cerita yang diberikan.
-
-========================
-IDE PENGGUNA
-========================
-
-{user_idea}
-
-========================
-KONTEKS CERITA SEBELUMNYA
-========================
-
-{konteks}
-
-========================
-BAGIAN CERITA
-========================
-
-{bagian}
-
-Tujuan bagian:
+Nama Tokoh : {tokoh}
+Genre : {genre}
+Peran : {peran}
+Sifat : {sifat}
+Elemen Penting : {", ".join(elemen)}
+Bagian Cerita : {bagian}
+Tujuan paragraf:
 {bagian_instruction[bagian]}
-
-Outline bagian:
+Outline bagian ini:
 {outline_bagian}
 
-========================
-ATURAN PENULISAN
-========================
-
+Aturan penulisan:
 1. Tulis maksimal 80 kata.
-2. Gunakan bahasa Indonesia yang alami dan mengalir seperti novel Indonesia modern.
-3. Fokus pada satu kejadian utama.
-4. Hubungkan kejadian dengan konteks sebelumnya secara logis.
-5. Pertahankan semua informasi penting dari ide pengguna.
-6. Jangan mengubah identitas, tujuan, atau karakter tokoh yang sudah ditetapkan.
-7. Jika informasi tertentu belum diberikan, kembangkan secara kreatif dan masuk akal.
-8. Gunakan elemen penting dalam cerita secara nyata, bukan sekadar menyebutkannya.
-9. Jangan menyelesaikan konflik utama sebelum bagian resolusi.
-10. Akhiri paragraf dengan perkembangan yang mendorong cerita menuju bagian berikutnya.
-11. Variasikan pembukaan paragraf.
-12. Hindari pengulangan frasa, deskripsi, dialog, atau tindakan dari paragraf sebelumnya.
-13. Jangan membuat paragraf menjadi rangkuman atau penjelasan.
+2. Gunakan bahasa Indonesia yang alami, mudah dipahami, dan mengalir seperti novel Indonesia modern.
+3. Fokus pada satu kejadian utama dalam paragraf ini.
+4. Paragraf harus memiliki hubungan sebab-akibat yang jelas dengan paragraf sebelumnya.
+5. Tokoh utama adalah {tokoh}. Jangan membuat tokoh utama baru kecuali benar-benar diperlukan.
+6. Gunakan sifat "{sifat}" melalui tindakan, dialog, dan keputusan tokoh, bukan dengan menyebutkannya secara langsung.
+7. Elemen penting harus memiliki fungsi nyata dalam cerita, bukan hanya disebutkan.
+8. Akhiri paragraf dengan situasi yang mendorong cerita berlanjut secara alami.
+9. Hanya tulis isi cerita tanpa penjelasan.
+10. Variasikan pembukaan paragraf.
+11.Jangan selalu memulai paragraf dengan nama tokoh atau tindakan yang sama.
+12. Hindari mengulang frasa, deskripsi tubuh, maupun dialog yang sama di beberapa paragraf.
 
-========================
-KONTINUITAS
-========================
+Jangan:
+- Jangan membuat kejadian yang melompat terlalu jauh.
+- Jangan memunculkan benda baru tanpa penjelasan.
+- Jangan tiba-tiba berpindah lokasi.
+- Jangan menyelesaikan konflik terlalu cepat.
+- Jangan memperkenalkan musuh baru jika konflik lama belum selesai.
 
-- Semua tindakan harus memiliki alasan yang jelas.
-- Keputusan tokoh harus sesuai dengan situasi dan perkembangan cerita.
-- Jangan tiba-tiba memunculkan tokoh penting tanpa alasan.
-- Jangan tiba-tiba memunculkan benda penting tanpa penjelasan.
-- Jangan berpindah lokasi secara tiba-tiba.
-- Jangan mengubah tujuan tokoh tanpa perkembangan cerita.
-- Jangan melupakan konflik dan tujuan utama cerita.
-- Peristiwa baru harus memiliki hubungan dengan peristiwa sebelumnya.
-- Perkembangan konflik harus mengikuti outline.
+Kontinuitas cerita:
+- Semua tindakan harus merupakan akibat logis dari paragraf sebelumnya.
+- Semua keputusan tokoh harus memiliki alasan.
+- Semua benda penting yang muncul harus tetap diingat sampai cerita selesai.
+- Jangan melupakan konflik utama.
+- Jangan melupakan tujuan tokoh.
 
-========================
-PEMERIKSAAN
-========================
-
-Sebelum memberikan jawaban, periksa secara internal:
-
-- Apakah paragraf terhubung dengan cerita sebelumnya?
-- Apakah ada tokoh atau benda yang muncul tanpa alasan?
-- Apakah ada informasi yang berulang?
-- Apakah cerita bergerak maju?
-- Apakah paragraf sesuai dengan tujuan bagian ini?
-
-Jika ditemukan masalah, perbaiki sebelum memberikan jawaban.
-
-Hanya tulis isi cerita.
-Jangan memberikan penjelasan, analisis, atau komentar.
+Periksa paragraf di atas.
+Jawab:
+1. Apakah ada benda yang muncul tiba-tiba?
+2. Apakah ada tokoh yang berubah tujuan tanpa alasan?
+3. Apakah ada kalimat yang mengulang informasi paragraf sebelumnya?
+4. Apakah konflik bergerak maju?
+Jika ada, tulis ulang paragraf tersebut menjadi lebih baik.
+Hanya tulis isi cerita tanpa penjelasan.
 """
 
-        # ============================
-        # Generate Paragraf
-        # ============================
+        else:
+
+            konteks = "\n\n".join(paragraphs[-3:])
+
+            prompt = f"""
+Anda adalah penulis novel profesional.
+Tugas Anda adalah MELANJUTKAN cerita berikut.
+
+CERITA SEBELUMNYA
+{konteks}
+
+Informasi cerita:
+Nama Tokoh : {tokoh}
+Genre : {genre}
+Peran : {peran}
+Sifat : {sifat}
+Elemen Penting : {", ".join(elemen)}
+Bagian cerita : {bagian}
+Tujuan paragraf:
+{bagian_instruction[bagian]}
+Outline bagian ini:
+{outline_bagian}
+
+Aturan penulisan:
+1. Tulis maksimal 80 kata.
+2. Gunakan bahasa Indonesia yang alami, mudah dipahami, dan mengalir seperti novel Indonesia modern.
+3. Fokus pada satu kejadian utama dalam paragraf ini.
+4. Paragraf harus memiliki hubungan sebab-akibat yang jelas dengan paragraf sebelumnya.
+5. Tokoh utama adalah {tokoh}. Jangan membuat tokoh utama baru kecuali benar-benar diperlukan.
+6. Gunakan sifat "{sifat}" melalui tindakan, dialog, dan keputusan tokoh, bukan dengan menyebutkannya secara langsung.
+7. Elemen penting harus memiliki fungsi nyata dalam cerita, bukan hanya disebutkan.
+8. Akhiri paragraf dengan situasi yang mendorong cerita berlanjut secara alami.
+9. Hanya tulis isi cerita tanpa penjelasan.
+10. Variasikan pembukaan paragraf.
+11.Jangan selalu memulai paragraf dengan nama tokoh atau tindakan yang sama.
+12. Hindari mengulang frasa, deskripsi tubuh, maupun dialog yang sama di beberapa paragraf.
+
+Jangan:
+- Jangan membuat kejadian yang melompat terlalu jauh.
+- Jangan memunculkan benda baru tanpa penjelasan.
+- Jangan tiba-tiba berpindah lokasi.
+- Jangan menyelesaikan konflik terlalu cepat.
+- Jangan memperkenalkan musuh baru jika konflik lama belum selesai.
+
+Kontinuitas cerita:
+- Semua tindakan harus merupakan akibat logis dari paragraf sebelumnya.
+- Semua keputusan tokoh harus memiliki alasan.
+- Semua benda penting yang muncul harus tetap diingat sampai cerita selesai.
+- Jangan melupakan konflik utama.
+- Jangan melupakan tujuan tokoh.
+
+Periksa paragraf di atas.
+Jawab:
+1. Apakah ada benda yang muncul tiba-tiba?
+2. Apakah ada tokoh yang berubah tujuan tanpa alasan?
+3. Apakah ada kalimat yang mengulang informasi paragraf sebelumnya?
+4. Apakah konflik bergerak maju?
+Jika ada, tulis ulang paragraf tersebut menjadi lebih baik.
+Hanya tulis isi cerita tanpa penjelasan.
+"""
 
         paragraph = generate_paragraph(prompt)
 
-        # Jika gagal
         if not paragraph:
             paragraph = "Cerita tidak dapat dilanjutkan."
-
-        # Jika terlalu pendek, generate ulang
         elif len(paragraph.split()) < 30:
             paragraph = generate_paragraph(prompt)
 
         paragraphs.append(paragraph)
 
-        print(f"Bagian {i + 1}: {bagian}")
-        print(paragraph)
-        print()
-
-    # ============================
-    # Gabungkan Cerita
-    # ============================
-
     return "\n\n".join(paragraphs)
 # =========================
 # Endpoint
 # =========================
+def parse_story_prompt(prompt: str) -> StoryRequest:
+    """Ambil field generator dari prompt teks yang dikirim oleh frontend."""
+    labels = re.compile(
+        r"(?i)(?<!\w)(nama\s+tokoh|nama|genre(?:\s+dunia)?|"
+        r"peran\s*/\s*pekerjaan|peran|pekerjaan|"
+        r"sifat\s+tokoh\s+utama|sifat|elemen\s+penting)\s*:"
+    )
+    matches = list(labels.finditer(prompt))
+    values = {}
 
-VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN")
+    for index, match in enumerate(matches):
+        next_start = matches[index + 1].start() if index + 1 < len(matches) else len(prompt)
+        key = re.sub(r"\s+", " ", match.group(1).lower()).strip()
+        key = re.sub(r"\s*/\s*", "/", key)
+        value = prompt[match.end():next_start].strip(" \t\r\n,:;-•")
+        values[key] = value
 
+    def get_value(*keys: str) -> str:
+        return next((values[key] for key in keys if values.get(key)), "")
 
-@app.get("/webhook")
-async def verify_webhook(request: Request):
+    raw_elements = get_value("elemen penting")
+    elements = [
+        re.sub(r"^[-•*\s]+", "", item).strip()
+        for item in re.split(r"[,\n]+", raw_elements)
+        if item.strip(" \t\r\n-•*")
+    ]
 
-    params = request.query_params
-
-    mode = params.get("hub.mode")
-    token = params.get("hub.verify_token")
-    challenge = params.get("hub.challenge")
-
-    if mode == "subscribe" and token == VERIFY_TOKEN:
-        return PlainTextResponse(challenge)
-
-    return PlainTextResponse(
-        "Verification failed",
-        status_code=403
+    return StoryRequest(
+        nama=get_value("nama tokoh", "nama"),
+        genre=get_value("genre", "genre dunia"),
+        peran=get_value("peran/pekerjaan", "peran", "pekerjaan"),
+        sifat=get_value("sifat tokoh utama", "sifat"),
+        elemen=elements,
     )
 
-@app.post("/webhook")
-async def receive_webhook(request: Request):
 
-    data = await request.json()
-
-    print("================================")
-    print("WEBHOOK WHATSAPP MASUK")
-    print("================================")
-    print(json.dumps(data, indent=2, ensure_ascii=False))
-
-    return {"status": "ok"}
+@app.options("/chat")
+def chat_options():
+    return JSONResponse(status_code=200, content={"message": "OK"})
 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
+def chat(req: StoryPromptRequest):
 
     try:
-        story = generate_story(req.message)
+        story_input = parse_story_prompt(req.prompt)
+        story = generate_story(story_input)
 
         return ChatResponse(reply=story)
 
@@ -424,7 +494,7 @@ def chat(req: ChatRequest):
         traceback.print_exc()
 
         return ChatResponse(reply=str(e))
-    
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main3:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main3:app", host="0.0.0.0", port=8002, reload=True)
